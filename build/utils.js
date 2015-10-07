@@ -84,3 +84,56 @@ exports.getRawDevice = function(device) {
   }
   return "/dev/rdisk" + match[1];
 };
+
+
+/**
+ * @summary Get file size
+ * @function
+ * @protected
+ *
+ * @param {String} file - file path
+ * @fulfil {Number} file size in bytes
+ * @returns {Promise}
+ *
+ * @example
+ * utils.getFileSize('foo/bar').then (size) ->
+ * 	console.log("Size is #{size} bytes")
+ */
+
+exports.getFileSize = function(file) {
+  return fs.statAsync(file).get('size');
+};
+
+
+/**
+ * @summary Replicate data between two file descriptors
+ * @function
+ * @protected
+ *
+ * @param {FileDescriptor} origin - origin fd
+ * @param {FileDescriptor} destination - destination fd
+ * @param {Number} length - chunk length
+ *
+ * @fulfil {[ Number, Number ]} bytes read and bytes written
+ * @returns {Promise}
+ *
+ * @example
+ * fs = require('fs')
+ *
+ * input = fs.openSync('foo', 'rs+')
+ * output = fs.openSync('bar', 'rs+')
+ *
+ * utils.replicateData(input, output, 1024).spread (bytesRead, bytesWritten) ->
+ * 	console.log("Read #{bytesRead}")
+ * 	console.log("Write #{bytesWritten}")
+ */
+
+exports.replicateData = function(origin, destination, length) {
+  var buffer;
+  buffer = new Buffer(length);
+  return fs.readAsync(origin, buffer, 0, length, null).spread(function(bytesRead) {
+    return fs.writeAsync(destination, buffer, 0, length, null).spread(function(bytesWritten) {
+      return [bytesRead, bytesWritten];
+    });
+  });
+};

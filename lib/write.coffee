@@ -27,11 +27,10 @@ THE SOFTWARE.
 ###
 
 EventEmitter = require('events').EventEmitter
-fs = require('fs')
-_ = require('lodash')
 Promise = require('bluebird')
-progressStream = require('progress-stream')
-StreamChunker = require('stream-chunker')
+fs = Promise.promisifyAll(require('fs'))
+Eta = require('node-eta')
+_ = require('lodash')
 utils = require('./utils')
 win32 = require('./win32')
 
@@ -54,7 +53,6 @@ win32 = require('./win32')
 #			length: 10485760,
 #			remaining: 9536136,
 #			eta: 10,
-#			runtime: 0,
 #			delta: 295396,
 #			speed: 949624
 #		}
@@ -62,17 +60,12 @@ win32 = require('./win32')
 # - `error`: An error event.
 # - `done`: An event emitted when the readable stream was written completely.
 #
-# If you're passing a readable stream from a custom location, you can configure the length by adding a `.length` number property to the stream.
-#
+# @param {String} image - image path
 # @param {String} device - device
-# @param {ReadStream} stream - readable stream
 # @returns {EventEmitter} emitter
 #
 # @example
-# myStream = fs.createReadStream('my/image')
-# myStream.length = fs.statAsync('my/image').size
-#
-# emitter = imageWrite.write('/dev/disk2', myStream)
+# emitter = imageWrite.write('my/image', '/dev/disk2')
 #
 # emitter.on 'progress', (state) ->
 # 	console.log(state)
@@ -83,31 +76,46 @@ win32 = require('./win32')
 # emitter.on 'done', ->
 # 	console.log('Finished writing to device')
 ###
-exports.write = (device, stream) ->
+exports.write = (image, device) ->
 	emitter = new EventEmitter()
-
-	if not stream.length?
-		throw new Error('Stream size missing')
-
 	device = utils.getRawDevice(device)
 
-	progress = progressStream
-		length: _.parseInt(stream.length)
-		time: 500
+	openFile = (file) ->
+		return fs.openAsync(file, 'rs+').disposer (fd) ->
+			return fs.closeAsync(fd)
 
-	progress.on 'progress', (state) ->
-		emitter.emit('progress', state)
+	chunkSize = 1024 * 1024
 
-	chunkSize = 65536 * 16 # 64K * 16 = 1024K = 1M
+	utils.eraseMBR(device)
+		.then(win32.prepare)
+		.then(_.partial(utils.getFileSize, image))
+		.then (imageSize) ->
+			Promise.using openFile(image), openFile(device), (imageFd, deviceFd) ->
 
-	utils.eraseMBR(device).then(win32.prepare).then ->
-		Promise.fromNode (callback) ->
-			stream
-				.pipe(progress)
-				.pipe(StreamChunker(chunkSize, flush: true))
-				.pipe(fs.createWriteStream(device, flags: 'rs+'))
-				.on('close', callback)
-				.on('error', callback)
+				eta = new Eta(imageSize / chunkSize)
+				eta.start()
+
+				copyFrom = (written, size) ->
+					utils.replicateData(imageFd, deviceFd, size)
+						.spread (bytesRead, bytesWritten) ->
+							written += size
+
+							eta.iterate()
+
+							emitter.emit 'progress',
+								percentage: written * 100 / imageSize
+								transferred: written
+								length: imageSize
+								delta: size
+								remaining: imageSize - written
+								eta: Math.floor(eta.getEtaInSeconds())
+								speed: eta.getIterationsPerSecond() * chunkSize
+
+							if written < imageSize
+								return copyFrom(written, size)
+
+				return copyFrom(0, chunkSize)
+
 	.then(win32.prepare).then ->
 		emitter.emit('done')
 

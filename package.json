@@ -49,6 +49,7 @@
   "dependencies": {
     "bluebird": "^2.9.30",
     "lodash": "^3.10.0",
+    "node-eta": "^0.1.1",
     "progress-stream": "^1.1.1",
     "stream-chunker": "^1.1.5"
   }

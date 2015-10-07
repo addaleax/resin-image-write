@@ -69,3 +69,47 @@ exports.getRawDevice = (device) ->
 	match = device.match(/\/dev\/disk(\d+)/)
 	return device if not match?
 	return "/dev/rdisk#{match[1]}"
+
+###*
+# @summary Get file size
+# @function
+# @protected
+#
+# @param {String} file - file path
+# @fulfil {Number} file size in bytes
+# @returns {Promise}
+#
+# @example
+# utils.getFileSize('foo/bar').then (size) ->
+# 	console.log("Size is #{size} bytes")
+###
+exports.getFileSize = (file) ->
+	return fs.statAsync(file).get('size')
+
+###*
+# @summary Replicate data between two file descriptors
+# @function
+# @protected
+#
+# @param {FileDescriptor} origin - origin fd
+# @param {FileDescriptor} destination - destination fd
+# @param {Number} length - chunk length
+#
+# @fulfil {[ Number, Number ]} bytes read and bytes written
+# @returns {Promise}
+#
+# @example
+# fs = require('fs')
+#
+# input = fs.openSync('foo', 'rs+')
+# output = fs.openSync('bar', 'rs+')
+#
+# utils.replicateData(input, output, 1024).spread (bytesRead, bytesWritten) ->
+# 	console.log("Read #{bytesRead}")
+# 	console.log("Write #{bytesWritten}")
+###
+exports.replicateData = (origin, destination, length) ->
+	buffer = new Buffer(length)
+	fs.readAsync(origin, buffer, 0, length, null).spread (bytesRead) ->
+		fs.writeAsync(destination, buffer, 0, length, null).spread (bytesWritten) ->
+			return [ bytesRead, bytesWritten ]

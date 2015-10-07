@@ -26,19 +26,17 @@ THE SOFTWARE.
 /**
  * @module imageWrite
  */
-var EventEmitter, Promise, StreamChunker, fs, progressStream, utils, win32, _;
+var Eta, EventEmitter, Promise, fs, utils, win32, _;
 
 EventEmitter = require('events').EventEmitter;
 
-fs = require('fs');
-
-_ = require('lodash');
-
 Promise = require('bluebird');
 
-progressStream = require('progress-stream');
+fs = Promise.promisifyAll(require('fs'));
 
-StreamChunker = require('stream-chunker');
+Eta = require('node-eta');
+
+_ = require('lodash');
 
 utils = require('./utils');
 
@@ -64,7 +62,6 @@ win32 = require('./win32');
  *			length: 10485760,
  *			remaining: 9536136,
  *			eta: 10,
- *			runtime: 0,
  *			delta: 295396,
  *			speed: 949624
  *		}
@@ -72,17 +69,12 @@ win32 = require('./win32');
  * - `error`: An error event.
  * - `done`: An event emitted when the readable stream was written completely.
  *
- * If you're passing a readable stream from a custom location, you can configure the length by adding a `.length` number property to the stream.
- *
+ * @param {String} image - image path
  * @param {String} device - device
- * @param {ReadStream} stream - readable stream
  * @returns {EventEmitter} emitter
  *
  * @example
- * myStream = fs.createReadStream('my/image')
- * myStream.length = fs.statAsync('my/image').size
- *
- * emitter = imageWrite.write('/dev/disk2', myStream)
+ * emitter = imageWrite.write('my/image', '/dev/disk2')
  *
  * emitter.on 'progress', (state) ->
  * 	console.log(state)
@@ -94,28 +86,40 @@ win32 = require('./win32');
  * 	console.log('Finished writing to device')
  */
 
-exports.write = function(device, stream) {
-  var chunkSize, emitter, progress;
+exports.write = function(image, device) {
+  var chunkSize, emitter, openFile;
   emitter = new EventEmitter();
-  if (stream.length == null) {
-    throw new Error('Stream size missing');
-  }
   device = utils.getRawDevice(device);
-  progress = progressStream({
-    length: _.parseInt(stream.length),
-    time: 500
-  });
-  progress.on('progress', function(state) {
-    return emitter.emit('progress', state);
-  });
-  chunkSize = 65536 * 16;
-  utils.eraseMBR(device).then(win32.prepare).then(function() {
-    return Promise.fromNode(function(callback) {
-      return stream.pipe(progress).pipe(StreamChunker(chunkSize, {
-        flush: true
-      })).pipe(fs.createWriteStream(device, {
-        flags: 'rs+'
-      })).on('close', callback).on('error', callback);
+  openFile = function(file) {
+    return fs.openAsync(file, 'rs+').disposer(function(fd) {
+      return fs.closeAsync(fd);
+    });
+  };
+  chunkSize = 1024 * 1024;
+  utils.eraseMBR(device).then(win32.prepare).then(_.partial(utils.getFileSize, image)).then(function(imageSize) {
+    return Promise.using(openFile(image), openFile(device), function(imageFd, deviceFd) {
+      var copyFrom, eta;
+      eta = new Eta(imageSize / chunkSize);
+      eta.start();
+      copyFrom = function(written, size) {
+        return utils.replicateData(imageFd, deviceFd, size).spread(function(bytesRead, bytesWritten) {
+          written += size;
+          eta.iterate();
+          emitter.emit('progress', {
+            percentage: written * 100 / imageSize,
+            transferred: written,
+            length: imageSize,
+            delta: size,
+            remaining: imageSize - written,
+            eta: Math.floor(eta.getEtaInSeconds()),
+            speed: eta.getIterationsPerSecond() * chunkSize
+          });
+          if (written < imageSize) {
+            return copyFrom(written, size);
+          }
+        });
+      };
+      return copyFrom(0, chunkSize);
     });
   }).then(win32.prepare).then(function() {
     return emitter.emit('done');
