@@ -27,6 +27,7 @@ StreamChunker = require('stream-chunker')
 utils = require('./utils')
 win32 = require('./win32')
 checksum = require('./checksum')
+denymount = require('./denymount')
 
 ###*
 # @summary Write a readable stream to a device
@@ -176,27 +177,36 @@ exports.check = (device, stream) ->
 		if not stream.length?
 			throw new Error('Stream size missing')
 
-		device = fs.createReadStream(utils.getRawDevice(device))
+		# We prevent disk from auto-mounting since this
+		# disrupts the checksum in operating systems that
+		# "touch" certain files in mountable partitions,
+		# like OS X and Windows.
+		denymount.deny(device).then (cancel) ->
 
-		# Since both the image and device checksum calculation
-		# rely on the same input stream, we can safely send
-		# both progress states reports to the client at the same.
-		emitProgress = (state) ->
-			emitter.emit('progress', state)
+			device = fs.createReadStream(utils.getRawDevice(device))
 
-		return Promise.props
-			stream: checksum.calculate stream,
-				bytes: stream.length
-				progress: emitProgress
+			# Since both the image and device checksum calculation
+			# rely on the same input stream, we can safely send
+			# both progress states reports to the client at the same.
+			emitProgress = (state) ->
+				emitter.emit('progress', state)
 
-			# Only calculate the checksum from the bytes that correspond
-			# to the original image size and not the whole drive since
-			# the drive might contain empty space that changes the
-			# resulting checksum.
-			# See https://help.ubuntu.com/community/HowToMD5SUM#Check_the_CD
-			device: checksum.calculate device,
-				bytes: stream.length
-				progress: emitProgress
+			return Promise.props
+				stream: checksum.calculate stream,
+					bytes: stream.length
+					progress: emitProgress
+
+				device: checksum.calculate device,
+					progress: emitProgress
+
+					# Only calculate the checksum from the bytes that correspond
+					# to the original image size and not the whole drive since
+					# the drive might contain empty space that changes the
+					# resulting checksum.
+					# See https://help.ubuntu.com/community/HowToMD5SUM#Check_the_CD
+					bytes: stream.length
+
+			.finally(cancel)
 
 	.then (checksums) ->
 		emitter.emit('done', checksums.stream is checksums.device)

@@ -18,7 +18,7 @@ limitations under the License.
 /**
  * @module imageWrite
  */
-var EventEmitter, Promise, StreamChunker, checksum, fs, progressStream, utils, win32, _;
+var EventEmitter, Promise, StreamChunker, checksum, denymount, fs, progressStream, utils, win32, _;
 
 EventEmitter = require('events').EventEmitter;
 
@@ -37,6 +37,8 @@ utils = require('./utils');
 win32 = require('./win32');
 
 checksum = require('./checksum');
+
+denymount = require('./denymount');
 
 
 /**
@@ -180,23 +182,25 @@ exports.check = function(device, stream) {
   var emitter;
   emitter = new EventEmitter();
   Promise["try"](function() {
-    var emitProgress;
     if (stream.length == null) {
       throw new Error('Stream size missing');
     }
-    device = fs.createReadStream(utils.getRawDevice(device));
-    emitProgress = function(state) {
-      return emitter.emit('progress', state);
-    };
-    return Promise.props({
-      stream: checksum.calculate(stream, {
-        bytes: stream.length,
-        progress: emitProgress
-      }),
-      device: checksum.calculate(device, {
-        bytes: stream.length,
-        progress: emitProgress
-      })
+    return denymount.deny(device).then(function(cancel) {
+      var emitProgress;
+      device = fs.createReadStream(utils.getRawDevice(device));
+      emitProgress = function(state) {
+        return emitter.emit('progress', state);
+      };
+      return Promise.props({
+        stream: checksum.calculate(stream, {
+          bytes: stream.length,
+          progress: emitProgress
+        }),
+        device: checksum.calculate(device, {
+          progress: emitProgress,
+          bytes: stream.length
+        })
+      })["finally"](cancel);
     });
   }).then(function(checksums) {
     return emitter.emit('done', checksums.stream === checksums.device);
