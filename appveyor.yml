@@ -32,3 +32,7 @@ test_script:
   - node -p "require('lzma-native')"
 #  - ps: npm test
 #  - cmd: npm test
+
+artifacts:
+  path: node_modules\lzma-native\binding\*
+  name: result
