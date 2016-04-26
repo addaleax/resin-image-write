@@ -28,7 +28,7 @@ build: off
 test_script:
   - node --version
   - npm --version
-  - npm install lzma-native
+  - npm install lzma-native --build-from-source
   - node -p "require('lzma-native')"
 #  - ps: npm test
 #  - cmd: npm test
