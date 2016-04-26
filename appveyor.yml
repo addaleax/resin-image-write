@@ -29,6 +29,6 @@ test_script:
   - node --version
   - npm --version
   - npm install lzma-native
-  - node -p 'require("lzma-native")'
+  - node -p "require('lzma-native')"
   - ps: npm test
   - cmd: npm test
