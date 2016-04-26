@@ -33,7 +33,7 @@ test_script:
 #  - node -p "require('lzma-native')"
   - git clone https://github.com/addaleax/lzma-native.git
   - cd lzma-native
-  - npm install
+  - npm install --build-from-source
   - npm test
   - node -p "require('./')"
 #  - ps: npm test
