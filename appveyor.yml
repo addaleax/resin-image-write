@@ -1,8 +1,8 @@
 # appveyor file
 # http://www.appveyor.com/docs/appveyor-yml
 
-init:
-  - git config --global core.autocrlf input
+#init:
+#  - git config --global core.autocrlf input
 
 cache:
   - C:\Users\appveyor\.node-gyp
@@ -20,8 +20,8 @@ install:
   - ps: Install-Product node $env:nodejs_version x64
 #  - npm -g install npm@2.12.1
 #  - set PATH=%APPDATA%\npm;%PATH%
-  - npm install -g gulp
-  - npm install
+#  - npm install -g gulp
+#  - npm install
 
 build: off
 
@@ -30,5 +30,5 @@ test_script:
   - npm --version
   - npm install lzma-native
   - node -p "require('lzma-native')"
-  - ps: npm test
-  - cmd: npm test
+#  - ps: npm test
+#  - cmd: npm test
