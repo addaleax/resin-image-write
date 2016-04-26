@@ -11,9 +11,10 @@ cache:
 # what combinations to test
 environment:
   matrix:
-    - nodejs_version: 0.10
-    - nodejs_version: 0.11
     - nodejs_version: 0.12
+      platform: x64
+    - nodejs_version: 0.12
+      platform: x86
 
 install:
   - ps: Install-Product node $env:nodejs_version x64
@@ -27,5 +28,7 @@ build: off
 test_script:
   - node --version
   - npm --version
+  - npm install lzma-native
+  - node -p 'require("lzma-native")'
   - ps: npm test
   - cmd: npm test
